@@ -1,0 +1,10 @@
+[theme]
+primaryColor = '#A98467'  # Warm Taupe/Bronze
+backgroundColor = '#FDFCF8' # Soft Cream White
+secondaryBackgroundColor = '#F0EBE3' # Light Warm Grey (for Sidebar/Cards)
+textColor = '#2C2C2C' # Soft Black
+font = 'sans serif'
+
+[server]
+headless = true
+enableCORS = false
