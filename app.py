@@ -203,6 +203,16 @@ if not st.session_state['user']:
 
 # --- Main App Logic (Logged In) ---
 
+# Startup check for credentials
+try:
+    if 'OPENAI_API_KEY' not in st.secrets and not os.getenv('OPENAI_API_KEY'):
+        st.error("⚠️ OPENAI_API_KEY not configured. Please add it to .streamlit/secrets.toml")
+        st.stop()
+except:
+    if not os.getenv('OPENAI_API_KEY'):
+        st.error("⚠️ OPENAI_API_KEY not configured. Please set it as an environment variable.")
+        st.stop()
+
 # Title & Logout
 col_title, col_logout = st.columns([8, 1])
 with col_title:
@@ -215,22 +225,8 @@ with col_logout:
         st.session_state['candidate_profile'] = {}
         st.rerun()
 
-# Sidebar - API Key & File Upload
+# Sidebar - File Upload
 with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    # Check for API Key
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        api_key = st.text_input("Enter OpenAI API Key", type="password")
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
-            st.success("API Key saved!")
-    else:
-        st.success("API Key loaded from environment")
-
-    st.divider()
-    
     st.header("📄 CV Upload")
     uploaded_file = st.file_uploader("Upload your CV (PDF)", type="pdf")
     

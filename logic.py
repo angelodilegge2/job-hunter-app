@@ -31,6 +31,16 @@ def extract_text_from_pdf(pdf_input):
         print(f"Error extracting text from PDF: {e}")
     return text
 
+def get_openai_key():
+    """Get OpenAI API key from secrets or environment."""
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
+            return st.secrets['OPENAI_API_KEY']
+    except:
+        pass
+    return os.getenv('OPENAI_API_KEY')
+
 def generate_candidate_profile(cv_text):
     """Uses OpenAI to summarize CV into a structured profile for IOs."""
     print("🧠 Analyzing CV against IO criteria...")
@@ -59,7 +69,10 @@ def generate_candidate_profile(cv_text):
     }}
     """
     try:
-        client = openai.OpenAI()
+        api_key = get_openai_key()
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found in secrets or environment")
+        client = openai.OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model="gpt-4o-mini", 
             messages=[{"role": "user", "content": prompt}], 
@@ -245,7 +258,10 @@ def match_job_to_cv(job_text, candidate_profile):
     }}
     """
     try:
-        client = openai.OpenAI()
+        api_key = get_openai_key()
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found in secrets or environment")
+        client = openai.OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model="gpt-4o-mini", 
             messages=[{"role": "user", "content": prompt}], 
@@ -256,7 +272,20 @@ def match_job_to_cv(job_text, candidate_profile):
         print(f"Error matching job: {e}")
         return {"score": 0, "job_summary": "Error", "strengths": [], "gaps": []}
 
-def send_visual_email(job_results, email_user, email_pass, target_email):
+def get_email_credentials():
+    """Get email credentials from secrets or environment."""
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            email_user = st.secrets.get('EMAIL_USER')
+            email_pass = st.secrets.get('EMAIL_PASS')
+            if email_user and email_pass:
+                return email_user, email_pass
+    except:
+        pass
+    return os.getenv('EMAIL_USER'), os.getenv('EMAIL_PASS')
+
+def send_visual_email(job_results, target_email):
     valid_matches = [r for r in job_results if r['Score'] > 50]
     if not valid_matches: 
         print("📭 No matches to email.")
@@ -286,6 +315,11 @@ def send_visual_email(job_results, email_user, email_pass, target_email):
         </div>"""
     
     html_content += "</div></body></html>"
+    
+    email_user, email_pass = get_email_credentials()
+    if not email_user or not email_pass:
+        print("\n❌ Email credentials not configured in secrets")
+        return
     
     msg = MIMEMultipart()
     msg['From'] = email_user
