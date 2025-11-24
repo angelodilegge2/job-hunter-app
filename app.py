@@ -13,8 +13,65 @@ database.init_db()
 # Page Config
 st.set_page_config(page_title="JobHunter AI", page_icon="🚀", layout="wide")
 
-# Title
-st.title("🚀 JobHunter AI")
+# Session State for User
+if 'user' not in st.session_state:
+    st.session_state['user'] = None
+
+# --- Login / Register Logic ---
+if not st.session_state['user']:
+    st.title("🚀 JobHunter AI - Login")
+    
+    tab_login, tab_register = st.tabs(["🔑 Login", "📝 Register"])
+    
+    with tab_login:
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            user = database.verify_password(email, password)
+            if user:
+                st.session_state['user'] = user
+                # Load Profile
+                profile = database.get_profile(user['id'])
+                if profile:
+                    st.session_state['cv_text'] = profile['cv_text']
+                    st.session_state['candidate_profile'] = profile['structured_profile']
+                    st.session_state['candidate_profile']['search_keywords'] = profile['search_keywords']
+                else:
+                    st.session_state['cv_text'] = ""
+                    st.session_state['candidate_profile'] = {}
+                st.rerun()
+            else:
+                st.error("Invalid email or password")
+
+    with tab_register:
+        new_email = st.text_input("New Email")
+        new_pass = st.text_input("New Password", type="password")
+        target_email = st.text_input("Alert Email (for daily reports)")
+        if st.button("Register"):
+            if new_email and new_pass:
+                user_id = database.create_user(new_email, new_pass, target_email)
+                if user_id:
+                    st.success("Account created! Please login.")
+                else:
+                    st.error("Email already exists.")
+            else:
+                st.warning("Please fill all fields.")
+    
+    st.stop() # Stop execution if not logged in
+
+# --- Main App Logic (Logged In) ---
+
+# Title & Logout
+col_title, col_logout = st.columns([8, 1])
+with col_title:
+    st.title(f"🚀 JobHunter AI")
+    st.caption(f"Logged in as: {st.session_state['user']['email']}")
+with col_logout:
+    if st.button("Logout"):
+        st.session_state['user'] = None
+        st.session_state['cv_text'] = ""
+        st.session_state['candidate_profile'] = {}
+        st.rerun()
 
 # Sidebar - API Key & File Upload
 with st.sidebar:
@@ -35,15 +92,13 @@ with st.sidebar:
     st.header("📄 CV Upload")
     uploaded_file = st.file_uploader("Upload your CV (PDF)", type="pdf")
     
-    # Initialize session state
+    # Initialize session state vars if missing
     if 'cv_text' not in st.session_state:
         st.session_state['cv_text'] = ""
     if 'candidate_profile' not in st.session_state:
         st.session_state['candidate_profile'] = {}
     
     if uploaded_file is not None:
-        # Only extract if we haven't already or if it's a new file (simplified check)
-        # For now, just extract when uploaded
         if not st.session_state['cv_text']:
             with st.spinner("Extracting text..."):
                 st.session_state['cv_text'] = logic.extract_text_from_pdf(uploaded_file)
@@ -51,16 +106,25 @@ with st.sidebar:
     # Editable CV Text
     if st.session_state['cv_text']:
         st.subheader("📝 Editable CV Text")
-        st.session_state['cv_text'] = st.text_area(
+        new_cv_text = st.text_area(
             "Modify text before analysis:", 
             value=st.session_state['cv_text'], 
             height=300
         )
+        if new_cv_text != st.session_state['cv_text']:
+            st.session_state['cv_text'] = new_cv_text
         
         if st.button("🔄 Analyze / Re-Analyze Profile"):
             with st.spinner("Analyzing CV..."):
                 st.session_state['candidate_profile'] = logic.generate_candidate_profile(st.session_state['cv_text'])
-                st.success("Profile Updated!")
+                # Save to DB
+                database.save_profile(
+                    st.session_state['user']['id'],
+                    st.session_state['cv_text'],
+                    st.session_state['candidate_profile'],
+                    st.session_state['candidate_profile'].get('search_keywords', [])
+                )
+                st.success("Profile Updated & Saved!")
 
     # Editable Profile Data
     if st.session_state['candidate_profile']:
@@ -71,8 +135,11 @@ with st.sidebar:
         current_keywords = st.session_state['candidate_profile'].get('search_keywords', [])
         keywords_str = ", ".join(current_keywords)
         new_keywords_str = st.text_input("🔍 Search Keywords (comma separated)", value=keywords_str)
-        st.session_state['candidate_profile']['search_keywords'] = [k.strip() for k in new_keywords_str.split(",") if k.strip()]
+        new_keywords = [k.strip() for k in new_keywords_str.split(",") if k.strip()]
         
+        if new_keywords != current_keywords:
+             st.session_state['candidate_profile']['search_keywords'] = new_keywords
+
         st.subheader("🧬 Match Context")
         
         # 1. Essential Qualifications
@@ -118,6 +185,16 @@ with st.sidebar:
                 "current_location": new_loc,
                 "mobility": new_mob
             }
+            
+        # Save Profile Button
+        if st.button("💾 Save Profile Changes"):
+             database.save_profile(
+                st.session_state['user']['id'],
+                st.session_state['cv_text'],
+                st.session_state['candidate_profile'],
+                st.session_state['candidate_profile'].get('search_keywords', [])
+            )
+             st.success("Profile Saved!")
 
 # Main Area Tabs
 tab1, tab2 = st.tabs(["🔍 Search Jobs", "💾 My Saved Jobs"])
@@ -166,7 +243,6 @@ with tab1:
                     progress_bar.progress((i + 1) / len(jobs))
                 
                 if results:
-                    # Store results in session state to persist across reruns (like saving)
                     st.session_state['last_results'] = results
                 else:
                     st.warning("No jobs found to analyze.")
@@ -177,8 +253,6 @@ with tab1:
         
         st.subheader("📊 Results")
         
-        # Display as list with Save buttons
-        # Sorting by score
         sorted_results = sorted(results, key=lambda x: x['Score'], reverse=True)
         
         for job in sorted_results:
@@ -190,7 +264,6 @@ with tab1:
                     st.caption(f"Source: {job['Source']}")
                     with st.expander("Details"):
                         st.write(job['Summary'])
-                        st.write(job['Summary'])
                         st.markdown("**Strengths:**")
                         for s in job['Strengths']:
                             st.markdown(f"- ✅ {s}")
@@ -199,7 +272,7 @@ with tab1:
                             st.markdown(f"- ⚠️ {g}")
                 with col2:
                     if st.button("💾 Save", key=f"save_{job['URL']}"):
-                        saved = database.save_job(job['Job Title'], job['Organization'], job['Score'], job['URL'])
+                        saved = database.save_job(st.session_state['user']['id'], job['Job Title'], job['Organization'], job['Score'], job['URL'])
                         if saved:
                             st.toast(f"Saved: {job['Job Title']}")
                         else:
@@ -208,7 +281,7 @@ with tab1:
 
 with tab2:
     st.header("💾 My Saved Jobs")
-    saved_jobs = database.get_saved_jobs()
+    saved_jobs = database.get_saved_jobs(st.session_state['user']['id'])
     
     if saved_jobs:
         df_saved = pd.DataFrame(saved_jobs)
@@ -225,7 +298,3 @@ with tab2:
         )
     else:
         st.info("No saved jobs yet.")
-
-# Cleanup temp file - No longer needed
-# if os.path.exists("temp_cv.pdf"):
-#    os.remove("temp_cv.pdf")

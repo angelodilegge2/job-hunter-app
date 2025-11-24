@@ -1,64 +1,173 @@
 import sqlite3
+import hashlib
+import os
+import json
 from datetime import datetime
 
 DB_NAME = "jobs.db"
 
 def init_db():
-    """Initialize the database and create the saved_jobs table if it doesn't exist."""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS saved_jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            company TEXT,
-            score INTEGER,
-            url TEXT,
-            date_added TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-def save_job(title, company, score, url):
-    """Save a job to the database."""
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    date_added = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Check if already exists to avoid duplicates (optional but good UX)
-    c.execute("SELECT id FROM saved_jobs WHERE url = ?", (url,))
-    if c.fetchone():
-        conn.close()
-        return False # Already saved
+    # Create Users Table
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        target_email TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
 
-    c.execute('''
-        INSERT INTO saved_jobs (title, company, score, url, date_added)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (title, company, score, url, date_added))
+    # Create Profiles Table
+    c.execute('''CREATE TABLE IF NOT EXISTS profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        cv_text TEXT,
+        structured_profile TEXT,
+        search_keywords TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id)
+    )''')
+
+    # Create Saved Jobs Table (New Schema with user_id)
+    # Check if table exists and has user_id, if not drop and recreate (simplest for dev)
+    try:
+        c.execute("SELECT user_id FROM saved_jobs LIMIT 1")
+    except sqlite3.OperationalError:
+        # Table might not exist or old schema
+        c.execute("DROP TABLE IF EXISTS saved_jobs")
+        
+    c.execute('''CREATE TABLE IF NOT EXISTS saved_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT,
+        company TEXT,
+        score INTEGER,
+        url TEXT,
+        date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        UNIQUE(user_id, url)
+    )''')
+    
     conn.commit()
     conn.close()
-    return True
 
-def get_saved_jobs():
-    """Retrieve all saved jobs."""
+# --- User Management ---
+
+def hash_password(password):
+    # Simple SHA-256 hashing with a salt would be better, but for this scope:
+    # We'll use a fixed salt for simplicity or just hash. 
+    # Let's use a basic salt.
+    salt = "jobhunter_salt_"
+    return hashlib.sha256((salt + password).encode()).hexdigest()
+
+def create_user(email, password, target_email):
     conn = sqlite3.connect(DB_NAME)
-    # Return dictionary objects for easier pandas conversion
-    conn.row_factory = sqlite3.Row 
     c = conn.cursor()
-    c.execute("SELECT * FROM saved_jobs ORDER BY date_added DESC")
+    try:
+        pwd_hash = hash_password(password)
+        c.execute("INSERT INTO users (email, password_hash, target_email) VALUES (?, ?, ?)", 
+                  (email, pwd_hash, target_email))
+        conn.commit()
+        return c.lastrowid
+    except sqlite3.IntegrityError:
+        return None # Email already exists
+    finally:
+        conn.close()
+
+def get_user_by_email(email):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE email = ?", (email,))
+    user = c.fetchone()
+    conn.close()
+    if user:
+        return dict(user)
+    return None
+
+def verify_password(email, password):
+    user = get_user_by_email(email)
+    if user and user['password_hash'] == hash_password(password):
+        return user
+    return None
+
+# --- Profile Management ---
+
+def save_profile(user_id, cv_text, profile_json, keywords):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    
+    # Check if profile exists
+    c.execute("SELECT id FROM profiles WHERE user_id = ?", (user_id,))
+    exists = c.fetchone()
+    
+    profile_str = json.dumps(profile_json)
+    keywords_str = json.dumps(keywords)
+    
+    if exists:
+        c.execute('''UPDATE profiles 
+                     SET cv_text = ?, structured_profile = ?, search_keywords = ?, updated_at = CURRENT_TIMESTAMP 
+                     WHERE user_id = ?''', 
+                  (cv_text, profile_str, keywords_str, user_id))
+    else:
+        c.execute('''INSERT INTO profiles (user_id, cv_text, structured_profile, search_keywords) 
+                     VALUES (?, ?, ?, ?)''', 
+                  (user_id, cv_text, profile_str, keywords_str))
+    
+    conn.commit()
+    conn.close()
+
+def get_profile(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM profiles WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    
+    if row:
+        data = dict(row)
+        # Parse JSON fields
+        try:
+            data['structured_profile'] = json.loads(data['structured_profile'])
+        except: data['structured_profile'] = {}
+        
+        try:
+            data['search_keywords'] = json.loads(data['search_keywords'])
+        except: data['search_keywords'] = []
+        
+        return data
+    return None
+
+# --- Job Management ---
+
+def save_job(user_id, title, company, score, url):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO saved_jobs (user_id, title, company, score, url) VALUES (?, ?, ?, ?, ?)", 
+                  (user_id, title, company, score, url))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+def get_saved_jobs(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM saved_jobs WHERE user_id = ? ORDER BY date_added DESC", (user_id,))
     rows = c.fetchall()
     conn.close()
-    
-    jobs = []
-    for row in rows:
-        jobs.append(dict(row))
-    return jobs
+    return [dict(row) for row in rows]
 
-def delete_job(job_id):
-    """Delete a job by ID."""
+def delete_job(job_id, user_id):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("DELETE FROM saved_jobs WHERE id = ?", (job_id,))
+    c.execute("DELETE FROM saved_jobs WHERE id = ? AND user_id = ?", (job_id, user_id))
     conn.commit()
     conn.close()
