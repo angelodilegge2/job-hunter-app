@@ -4,6 +4,7 @@ import time
 import os
 import logic
 import json
+from datetime import datetime
 
 import database
 
@@ -13,11 +14,144 @@ database.init_db()
 # Page Config
 st.set_page_config(page_title="JobHunter AI", page_icon="🚀", layout="wide")
 
+# Custom CSS
+st.markdown("""
+<style>
+    /* Remove default padding */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 0rem;
+    }
+    
+    /* Card styling */
+    .job-card {
+        background: white;
+        border: 1px solid #E8E4DD;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .job-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 12px;
+    }
+    
+    .job-title {
+        font-size: 1.4em;
+        font-weight: 700;
+        color: #2C2C2C;
+        margin: 0;
+    }
+    
+    .job-org {
+        font-size: 1em;
+        color: #666;
+        margin: 4px 0 0 0;
+    }
+    
+    .score-badge {
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 0.9em;
+        white-space: nowrap;
+    }
+    
+    .score-green {
+        background: #D4EDDA;
+        color: #155724;
+    }
+    
+    .score-orange {
+        background: #FFF3CD;
+        color: #856404;
+    }
+    
+    .summary-box {
+        background: #F7F5F2;
+        padding: 16px;
+        border-radius: 8px;
+        margin: 16px 0;
+        font-style: italic;
+        color: #4A4A4A;
+        line-height: 1.6;
+    }
+    
+    .details-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin: 16px 0;
+    }
+    
+    .detail-box h4 {
+        margin: 0 0 10px 0;
+        font-size: 1em;
+        font-weight: 600;
+    }
+    
+    .detail-box ul {
+        margin: 0;
+        padding-left: 20px;
+    }
+    
+    .detail-box li {
+        margin-bottom: 6px;
+        line-height: 1.5;
+    }
+    
+    .apply-button {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        background: #A98467;
+        color: white;
+        text-align: center;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        margin-top: 16px;
+    }
+    
+    .apply-button:hover {
+        background: #8F6E55;
+        text-decoration: none;
+    }
+    
+    /* Sidebar profile styling */
+    .profile-section {
+        background: #F0EBE3;
+        padding: 16px;
+        border-radius: 8px;
+        margin: 12px 0;
+    }
+    
+    .profile-section h4 {
+        margin: 0 0 8px 0;
+        color: #2C2C2C;
+    }
+    
+    .skill-tag {
+        display: inline-block;
+        background: white;
+        padding: 4px 12px;
+        border-radius: 16px;
+        margin: 4px 4px 4px 0;
+        font-size: 0.85em;
+        border: 1px solid #D4CFC5;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Session State for User and Registration Wizard
 if 'user' not in st.session_state:
     st.session_state['user'] = None
 if 'registration_step' not in st.session_state:
-    st.session_state['registration_step'] = 0  # 0 = not registering, 1-3 = wizard steps
+    st.session_state['registration_step'] = 0
 if 'registration_data' not in st.session_state:
     st.session_state['registration_data'] = {}
 
@@ -101,7 +235,6 @@ if not st.session_state['user']:
             
             uploaded_cv = st.file_uploader("Upload CV (PDF)", type="pdf", key="reg_cv_upload")
             
-            # Process CV if uploaded and not yet processed
             if uploaded_cv and 'cv_text' not in st.session_state['registration_data']:
                 with st.spinner("Extracting and analyzing your CV..."):
                     cv_text = logic.extract_text_from_pdf(uploaded_cv)
@@ -111,7 +244,6 @@ if not st.session_state['user']:
                     st.session_state['registration_data']['profile'] = profile
                     st.success("✅ CV Analyzed!")
             
-            # Display profile preview if available
             if 'profile' in st.session_state['registration_data']:
                 st.markdown("#### 👀 Profile Preview")
                 profile = st.session_state['registration_data']['profile']
@@ -124,16 +256,10 @@ if not st.session_state['user']:
                     skills = profile.get('2_core_tech_stack', [])
                     for skill in skills:
                         st.markdown(f"- {skill}")
-                
-                with st.expander("🎯 Desired Skills"):
-                    desired = profile.get('3_desired_stack', [])
-                    for skill in desired:
-                        st.markdown(f"- {skill}")
             
             col_back, col_next = st.columns([1, 1])
             with col_back:
                 if st.button("← Back", use_container_width=True):
-                    # Clear CV data when going back
                     if 'cv_text' in st.session_state['registration_data']:
                         del st.session_state['registration_data']['cv_text']
                     if 'profile' in st.session_state['registration_data']:
@@ -166,7 +292,6 @@ if not st.session_state['user']:
             
             with col_finish:
                 if st.button("🚀 Create Account", type="primary", use_container_width=True):
-                    # Create user
                     user_id = database.create_user(
                         st.session_state['registration_data']['email'],
                         st.session_state['registration_data']['password'],
@@ -174,7 +299,6 @@ if not st.session_state['user']:
                     )
                     
                     if user_id:
-                        # Save profile
                         database.save_profile(
                             user_id,
                             st.session_state['registration_data']['cv_text'],
@@ -182,15 +306,11 @@ if not st.session_state['user']:
                             st.session_state['registration_data']['profile'].get('search_keywords', [])
                         )
                         
-                        # Auto-login
                         user = database.get_user_by_email(st.session_state['registration_data']['email'])
                         st.session_state['user'] = user
-                        
-                        # Load profile into session
                         st.session_state['cv_text'] = st.session_state['registration_data']['cv_text']
                         st.session_state['candidate_profile'] = st.session_state['registration_data']['profile']
                         
-                        # Clear registration state
                         st.session_state['registration_step'] = 0
                         st.session_state['registration_data'] = {}
                         
@@ -199,9 +319,9 @@ if not st.session_state['user']:
                     else:
                         st.error("Failed to create account. Please try again.")
     
-    st.stop() # Stop execution if not logged in
+    st.stop()
 
-# --- Main App Logic (Logged In) ---
+# --- Main App (Logged In) ---
 
 # Startup check for credentials
 try:
@@ -213,207 +333,29 @@ except:
         st.error("⚠️ OPENAI_API_KEY not configured. Please set it as an environment variable.")
         st.stop()
 
-# Title & Logout
-col_title, col_logout = st.columns([8, 1])
-with col_title:
-    st.title(f"🚀 JobHunter AI")
-    st.caption(f"Logged in as: {st.session_state['user']['email']}")
-with col_logout:
-    if st.button("Logout"):
+# Sidebar - User Dashboard
+with st.sidebar:
+    st.markdown("## 👤 My Profile")
+    
+    # Logout
+    if st.button("Logout", use_container_width=True):
         st.session_state['user'] = None
         st.session_state['cv_text'] = ""
         st.session_state['candidate_profile'] = {}
         st.rerun()
-
-# Sidebar - Profile Summary
-with st.sidebar:
-    st.header("👤 Your Profile")
-    
-    # Load profile from DB
-    user_profile = database.get_profile(st.session_state['user']['id'])
-    
-    if user_profile:
-        # Search Keywords
-        st.subheader("🔍 Search Keywords")
-        keywords = user_profile.get('search_keywords', [])
-        if keywords:
-            st.write(", ".join(keywords))
-        else:
-            st.caption("No keywords set")
-        
-        # Core Skills
-        st.subheader("🛠️ Core Skills")
-        profile_data = user_profile.get('structured_profile', {})
-        skills = profile_data.get('2_core_tech_stack', [])
-        if skills:
-            for skill in skills[:5]:  # Show top 5
-                st.markdown(f"- {skill}")
-            if len(skills) > 5:
-                st.caption(f"...and {len(skills) - 5} more")
-        else:
-            st.caption("No skills listed")
-        
-        # Target Email
-        st.subheader("📧 Alert Email")
-        st.write(st.session_state['user'].get('target_email', 'Not set'))
-    else:
-        st.info("No profile data. Upload a CV in Settings.")
-
-# Main Area - 4 Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["🔍 Live Search", "💾 My Saved Jobs", "⚙️ Settings", "🔐 Admin"])
-
-# Tab 1: Live Search
-with tab1:
-    st.header("Live Job Search")
-    
-    if st.button("🔍 Run Scan Now", type="primary"):
-        user_profile = database.get_profile(st.session_state['user']['id'])
-        
-        if not user_profile or not user_profile.get('search_keywords'):
-            st.warning("Please set up your profile in Settings first.")
-        else:
-            # Use stored profile for search
-            candidate_profile = user_profile['structured_profile']
-            candidate_profile['search_keywords'] = user_profile['search_keywords']
-            
-            with st.status("🔍 Scanning Job Boards...", expanded=True) as status:
-                start_time = time.time()
-                
-                def update_status(msg):
-                    status.write(msg)
-                
-                # Fetch Jobs
-                jobs = logic.fetch_all_jobs(candidate_profile, status_callback=update_status)
-                
-                end_time = time.time()
-                elapsed = end_time - start_time
-                
-                status.update(label=f"✅ Search Complete! Found {len(jobs)} jobs in {elapsed:.2f} seconds.", state="complete", expanded=False)
-                
-                st.info(f"⏱️ Search took {elapsed:.2f} seconds. Analyzing matches...")
-                
-                # Match Jobs
-                results = []
-                progress_bar = st.progress(0)
-                
-                for i, job in enumerate(jobs):
-                    analysis = logic.match_job_to_cv(job['clean_body'], candidate_profile)
-                    score = analysis.get('score', 0)
-                    
-                    results.append({
-                        "Job Title": job['title'],
-                        "Organization": job['org'],
-                        "Score": score,
-                        "Summary": analysis.get('job_summary', 'N/A'),
-                        "Strengths": analysis.get('strengths', []),
-                        "Gaps": analysis.get('gaps', []),
-                        "URL": job['url'],
-                        "Source": job['source']
-                    })
-                    progress_bar.progress((i + 1) / len(jobs))
-                
-                if results:
-                    st.session_state['last_results'] = results
-                else:
-                    st.warning("No jobs found to analyze.")
-
-    # Display Results
-    if 'last_results' in st.session_state:
-        results = st.session_state['last_results']
-        
-        st.subheader(f"📊 Found {len(results)} Jobs")
-        
-        sorted_results = sorted(results, key=lambda x: x['Score'], reverse=True)
-        
-        for job in sorted_results:
-            with st.container():
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"### [{job['Job Title']}]({job['URL']})")
-                    st.markdown(f"**{job['Organization']}** | Score: **{job['Score']}** | Source: {job['Source']}")
-                    
-                    with st.expander("Details"):
-                        st.write(job['Summary'])
-                        st.markdown("**Strengths:**")
-                        for s in job['Strengths']:
-                            st.markdown(f"- ✅ {s}")
-                        st.markdown("**Gaps:**")
-                        for g in job['Gaps']:
-                            st.markdown(f"- ⚠️ {g}")
-                with col2:
-                    if st.button("💾 Save", key=f"save_{job['URL']}"):
-                        saved = database.save_job(
-                            st.session_state['user']['id'], 
-                            job['Job Title'], 
-                            job['Organization'], 
-                            job['Score'], 
-                            job['URL']
-                        )
-                        if saved:
-                            st.toast(f"Saved: {job['Job Title']}")
-                        else:
-                            st.toast("Already saved!")
-                st.divider()
-
-# Tab 2: My Saved Jobs
-with tab2:
-    st.header("💾 My Saved Jobs")
-    
-    saved_jobs = database.get_saved_jobs(st.session_state['user']['id'])
-    
-    if saved_jobs:
-        df_saved = pd.DataFrame(saved_jobs)
-        st.dataframe(
-            df_saved[["title", "company", "score", "date_added", "url"]],
-            use_container_width=True,
-            column_config={
-                "url": st.column_config.LinkColumn("Link"),
-                "title": "Job Title",
-                "company": "Company",
-                "score": "Score",
-                "date_added": "Date Added"
-            }
-        )
-    else:
-        st.info("No saved jobs yet. Run a search and save jobs you like!")
-
-# Tab 3: Settings
-with tab3:
-    st.header("⚙️ Settings")
-    
-    # Section 1: Update Target Email
-    st.subheader("📧 Notification Email")
-    current_email = st.session_state['user'].get('target_email', '')
-    new_target_email = st.text_input("Email for daily job alerts", value=current_email)
-    
-    if st.button("Update Email"):
-        # Update user in database
-        conn = database.sqlite3.connect(database.DB_NAME)
-        c = conn.cursor()
-        c.execute("UPDATE users SET target_email = ? WHERE id = ?", 
-                  (new_target_email, st.session_state['user']['id']))
-        conn.commit()
-        conn.close()
-        
-        # Update session state
-        st.session_state['user']['target_email'] = new_target_email
-        st.success("✅ Email updated!")
     
     st.divider()
     
-    # Section 2: Re-upload CV
-    st.subheader("📄 Update Your CV")
-    st.caption("Upload a new CV to refresh your profile")
+    # Load or upload CV
+    user_profile = database.get_profile(st.session_state['user']['id'])
     
-    cv_file = st.file_uploader("Upload CV (PDF)", type="pdf", key="settings_cv_upload")
+    cv_upload = st.file_uploader("📄 Upload/Update CV", type="pdf")
     
-    if cv_file:
-        with st.spinner("Processing your CV..."):
-            # Extract and analyze
-            cv_text = logic.extract_text_from_pdf(cv_file)
+    if cv_upload:
+        with st.spinner("Processing CV..."):
+            cv_text = logic.extract_text_from_pdf(cv_upload)
             profile = logic.generate_candidate_profile(cv_text)
             
-            # Save to database
             database.save_profile(
                 st.session_state['user']['id'],
                 cv_text,
@@ -421,86 +363,178 @@ with tab3:
                 profile.get('search_keywords', [])
             )
             
-            st.success("✅ CV updated! Your profile has been refreshed.")
-            st.info("💡 Your search keywords and skills have been updated based on the new CV.")
+            st.session_state['cv_text'] = cv_text
+            st.session_state['candidate_profile'] = profile
+            st.success("✅ CV Updated!")
+            st.rerun()
+    
+    # Display profile if exists
+    if user_profile:
+        profile_data = user_profile.get('structured_profile', {})
+        
+        st.markdown('<div class="profile-section">', unsafe_allow_html=True)
+        st.markdown("#### 🛠️ Top Skills")
+        skills = profile_data.get('2_core_tech_stack', [])[:6]
+        for skill in skills:
+            st.markdown(f'<span class="skill-tag">{skill}</span>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="profile-section">', unsafe_allow_html=True)
+        st.markdown("#### 📊 Experience")
+        qual = profile_data.get('1_essential_qualifications', {})
+        years = qual.get('years_experience', 0)
+        sector = qual.get('sector', 'Not specified')
+        st.write(f"**{years} years** in {sector}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # Target Email
+    current_target = st.session_state['user'].get('target_email', '')
+    target_email = st.text_input("📧 Alert Email", value=current_target)
+    
+    if target_email != current_target:
+        conn = database.sqlite3.connect(database.DB_NAME)
+        c = conn.cursor()
+        c.execute("UPDATE users SET target_email = ? WHERE id = ?", 
+                  (target_email, st.session_state['user']['id']))
+        conn.commit()
+        conn.close()
+        st.session_state['user']['target_email'] = target_email
+    
+    st.divider()
+    
+    # Find Jobs Button
+    if st.button("🔍 Find New Jobs", type="primary", use_container_width=True):
+        if not user_profile:
+            st.warning("Please upload a CV first!")
+        else:
+            st.session_state['trigger_search'] = True
             st.rerun()
 
-# Tab 4: Admin
-with tab4:
-    st.header("🔐 Admin Dashboard")
-    
-    # Admin authentication
-    if 'admin_authenticated' not in st.session_state:
-        st.session_state['admin_authenticated'] = False
-    
-    if not st.session_state['admin_authenticated']:
-        st.subheader("Authentication Required")
-        admin_password = st.text_input("Admin Password", type="password", key="admin_pwd")
-        
-        if st.button("Login as Admin"):
-            try:
-                correct_password = st.secrets.get('ADMIN_PASSWORD')
-                if not correct_password:
-                    correct_password = os.getenv('ADMIN_PASSWORD')
-                
-                if admin_password and admin_password == correct_password:
-                    st.session_state['admin_authenticated'] = True
-                    st.success("✅ Admin access granted!")
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid password")
-            except:
-                st.error("⚠️ ADMIN_PASSWORD not configured in secrets")
-    else:
-        # Admin is authenticated
-        col_stats, col_logout = st.columns([4, 1])
-        with col_logout:
-            if st.button("Logout Admin"):
-                st.session_state['admin_authenticated'] = False
-                st.rerun()
-        
-        # Display statistics
-        stats = database.get_user_stats()
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Users", stats['total_users'])
-        with col2:
-            st.metric("Active Subscriptions", stats['active_subscriptions'])
-        with col3:
-            st.metric("Users with Profiles", stats['users_with_profiles'])
-        
-        st.divider()
-        
-        # User management table
-        st.subheader("User Management")
-        
-        users = database.get_all_users()
-        
-        if users:
-            for user in users:
-                with st.expander(f"👤 {user['email']} (ID: {user['id']})"):
-                    col_info, col_actions = st.columns([3, 1])
-                    
-                    with col_info:
-                        st.write(f"**Target Email:** {user.get('target_email', 'Not set')}")
-                        st.write(f"**Created:** {user['created_at']}")
-                        st.write(f"**Profile Status:** {'✅ Has CV' if user['has_profile'] else '❌ No CV'}")
-                        if user['profile_updated']:
-                            st.write(f"**Profile Updated:** {user['profile_updated']}")
-                    
-                    with col_actions:
-                        current_status = bool(user.get('subscription_enabled', 1))
-                        new_status = st.toggle(
-                            "Email Subscription",
-                            value=current_status,
-                            key=f"sub_{user['id']}"
-                        )
-                        
-                        if new_status != current_status:
-                            database.toggle_subscription(user['id'], new_status)
-                            st.success("✅ Updated!")
-                            st.rerun()
-        else:
-            st.info("No users registered yet.")
+# Main Page - Job Feed
+st.title("📰 Daily Intelligence Report")
+st.caption(f"Generated on {datetime.now().strftime('%B %d, %Y')}")
 
+st.divider()
+
+# Trigger job search
+if st.session_state.get('trigger_search', False):
+    st.session_state['trigger_search'] = False
+    
+    user_profile = database.get_profile(st.session_state['user']['id'])
+    candidate_profile = user_profile['structured_profile']
+    candidate_profile['search_keywords'] = user_profile['search_keywords']
+    
+    with st.status("🔍 Scanning Job Boards...", expanded=True) as status:
+        start_time = time.time()
+        
+        def update_status(msg):
+            status.write(msg)
+        
+        jobs = logic.fetch_all_jobs(candidate_profile, status_callback=update_status)
+        
+        end_time = time.time()
+        elapsed = end_time - start_time
+        
+        status.update(label=f"✅ Found {len(jobs)} jobs in {elapsed:.2f}s", state="complete", expanded=False)
+    
+    # Match jobs
+    results = []
+    progress_bar = st.progress(0)
+    
+    for i, job in enumerate(jobs):
+        analysis = logic.match_job_to_cv(job['clean_body'], candidate_profile)
+        score = analysis.get('score', 0)
+        
+        if score > 0:  # Only keep jobs with score > 0
+            results.append({
+                "title": job['title'],
+                "org": job['org'],
+                "score": score,
+                "summary": analysis.get('job_summary', 'N/A'),
+                "strengths": analysis.get('strengths', []),
+                "gaps": analysis.get('gaps', []),
+                "url": job['url'],
+                "source": job['source']
+            })
+        
+        progress_bar.progress((i + 1) / len(jobs))
+    
+    progress_bar.empty()
+    st.session_state['job_results'] = sorted(results, key=lambda x: x['score'], reverse=True)
+
+# Display job cards
+if 'job_results' in st.session_state and st.session_state['job_results']:
+    st.subheader(f"🎯 {len(st.session_state['job_results'])} Matching Opportunities")
+    
+    for job in st.session_state['job_results']:
+        # Determine badge color
+        badge_class = "score-green" if job['score'] > 85 else "score-orange"
+        
+        # Build strengths list
+        strengths_html = "".join([f"<li>{s}</li>" for s in job['strengths'][:5]])
+        
+        # Build gaps list
+        gaps_html = "".join([f"<li>{g}</li>" for g in job['gaps'][:5]])
+        
+        # Create card HTML
+        card_html = f"""
+        <div class="job-card">
+            <div class="job-header">
+                <div>
+                    <h2 class="job-title">{job['title']}</h2>
+                    <p class="job-org">{job['org']}</p>
+                </div>
+                <div class="score-badge {badge_class}">
+                    {job['score']}% Match
+                </div>
+            </div>
+            
+            <div class="summary-box">
+                {job['summary']}
+            </div>
+            
+            <div class="details-grid">
+                <div class="detail-box">
+                    <h4>✅ Your Match</h4>
+                    <ul>
+                        {strengths_html}
+                    </ul>
+                </div>
+                <div class="detail-box">
+                    <h4>⚠️ Potential Gaps</h4>
+                    <ul>
+                        {gaps_html}
+                    </ul>
+                </div>
+            </div>
+            
+            <a href="{job['url']}" target="_blank" class="apply-button">
+                Apply Now →
+            </a>
+        </div>
+        """
+        
+        st.markdown(card_html, unsafe_allow_html=True)
+        
+        # Save button (outside the card)
+        col1, col2, col3 = st.columns([1, 1, 4])
+        with col1:
+            if st.button("💾 Save", key=f"save_{job['url']}", use_container_width=True):
+                saved = database.save_job(
+                    st.session_state['user']['id'],
+                    job['title'],
+                    job['org'],
+                    job['score'],
+                    job['url']
+                )
+                if saved:
+                    st.toast(f"Saved: {job['title']}")
+                else:
+                    st.toast("Already saved!")
+
+elif 'job_results' in st.session_state:
+    st.info("No matching jobs found. Try adjusting your profile or check back later!")
+else:
+    st.info("👈 Click 'Find New Jobs' in the sidebar to start your search!")
