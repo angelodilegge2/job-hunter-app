@@ -13,49 +13,191 @@ database.init_db()
 # Page Config
 st.set_page_config(page_title="JobHunter AI", page_icon="🚀", layout="wide")
 
-# Session State for User
+# Session State for User and Registration Wizard
 if 'user' not in st.session_state:
     st.session_state['user'] = None
+if 'registration_step' not in st.session_state:
+    st.session_state['registration_step'] = 0  # 0 = not registering, 1-3 = wizard steps
+if 'registration_data' not in st.session_state:
+    st.session_state['registration_data'] = {}
 
 # --- Login / Register Logic ---
 if not st.session_state['user']:
-    st.title("🚀 JobHunter AI - Login")
+    st.title("🚀 JobHunter AI")
     
-    tab_login, tab_register = st.tabs(["🔑 Login", "📝 Register"])
+    # Not in registration mode - show login
+    if st.session_state['registration_step'] == 0:
+        st.subheader("🔑 Login")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            
+            col_login, col_register = st.columns(2)
+            with col_login:
+                if st.button("Login", type="primary", use_container_width=True):
+                    user = database.verify_password(email, password)
+                    if user:
+                        st.session_state['user'] = user
+                        # Load Profile
+                        profile = database.get_profile(user['id'])
+                        if profile:
+                            st.session_state['cv_text'] = profile['cv_text']
+                            st.session_state['candidate_profile'] = profile['structured_profile']
+                            st.session_state['candidate_profile']['search_keywords'] = profile['search_keywords']
+                        else:
+                            st.session_state['cv_text'] = ""
+                            st.session_state['candidate_profile'] = {}
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password")
+            
+            with col_register:
+                if st.button("Create Account", use_container_width=True):
+                    st.session_state['registration_step'] = 1
+                    st.session_state['registration_data'] = {}
+                    st.rerun()
     
-    with tab_login:
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
-            user = database.verify_password(email, password)
-            if user:
-                st.session_state['user'] = user
-                # Load Profile
-                profile = database.get_profile(user['id'])
-                if profile:
-                    st.session_state['cv_text'] = profile['cv_text']
-                    st.session_state['candidate_profile'] = profile['structured_profile']
-                    st.session_state['candidate_profile']['search_keywords'] = profile['search_keywords']
-                else:
-                    st.session_state['cv_text'] = ""
-                    st.session_state['candidate_profile'] = {}
-                st.rerun()
-            else:
-                st.error("Invalid email or password")
-
-    with tab_register:
-        new_email = st.text_input("New Email")
-        new_pass = st.text_input("New Password", type="password")
-        target_email = st.text_input("Alert Email (for daily reports)")
-        if st.button("Register"):
-            if new_email and new_pass:
-                user_id = database.create_user(new_email, new_pass, target_email)
-                if user_id:
-                    st.success("Account created! Please login.")
-                else:
-                    st.error("Email already exists.")
-            else:
-                st.warning("Please fill all fields.")
+    # Registration Wizard
+    elif st.session_state['registration_step'] > 0:
+        st.subheader("📝 Create Your Account")
+        st.progress(st.session_state['registration_step'] / 3, text=f"Step {st.session_state['registration_step']} of 3")
+        
+        # Step 1: Account Setup
+        if st.session_state['registration_step'] == 1:
+            st.markdown("### Step 1: Account Information")
+            
+            reg_email = st.text_input("Email Address", key="reg_email")
+            reg_password = st.text_input("Password", type="password", key="reg_password")
+            reg_password_confirm = st.text_input("Confirm Password", type="password", key="reg_password_confirm")
+            
+            col_back, col_next = st.columns([1, 1])
+            with col_back:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state['registration_step'] = 0
+                    st.session_state['registration_data'] = {}
+                    st.rerun()
+            
+            with col_next:
+                if st.button("Next →", type="primary", use_container_width=True):
+                    if not reg_email or not reg_password:
+                        st.error("Please fill in all fields")
+                    elif reg_password != reg_password_confirm:
+                        st.error("Passwords do not match")
+                    elif database.get_user_by_email(reg_email):
+                        st.error("Email already exists. Please login instead.")
+                    else:
+                        st.session_state['registration_data']['email'] = reg_email
+                        st.session_state['registration_data']['password'] = reg_password
+                        st.session_state['registration_step'] = 2
+                        st.rerun()
+        
+        # Step 2: The Brain (CV Upload)
+        elif st.session_state['registration_step'] == 2:
+            st.markdown("### Step 2: Upload Your CV")
+            st.caption("We'll analyze your CV to create your personalized job hunting profile")
+            
+            uploaded_cv = st.file_uploader("Upload CV (PDF)", type="pdf", key="reg_cv_upload")
+            
+            # Process CV if uploaded and not yet processed
+            if uploaded_cv and 'cv_text' not in st.session_state['registration_data']:
+                with st.spinner("Extracting and analyzing your CV..."):
+                    cv_text = logic.extract_text_from_pdf(uploaded_cv)
+                    profile = logic.generate_candidate_profile(cv_text)
+                    
+                    st.session_state['registration_data']['cv_text'] = cv_text
+                    st.session_state['registration_data']['profile'] = profile
+                    st.success("✅ CV Analyzed!")
+            
+            # Display profile preview if available
+            if 'profile' in st.session_state['registration_data']:
+                st.markdown("#### 👀 Profile Preview")
+                profile = st.session_state['registration_data']['profile']
+                
+                with st.expander("🔍 Search Keywords", expanded=True):
+                    keywords = profile.get('search_keywords', [])
+                    st.write(", ".join(keywords))
+                
+                with st.expander("🛠️ Core Skills"):
+                    skills = profile.get('2_core_tech_stack', [])
+                    for skill in skills:
+                        st.markdown(f"- {skill}")
+                
+                with st.expander("🎯 Desired Skills"):
+                    desired = profile.get('3_desired_stack', [])
+                    for skill in desired:
+                        st.markdown(f"- {skill}")
+            
+            col_back, col_next = st.columns([1, 1])
+            with col_back:
+                if st.button("← Back", use_container_width=True):
+                    # Clear CV data when going back
+                    if 'cv_text' in st.session_state['registration_data']:
+                        del st.session_state['registration_data']['cv_text']
+                    if 'profile' in st.session_state['registration_data']:
+                        del st.session_state['registration_data']['profile']
+                    st.session_state['registration_step'] = 1
+                    st.rerun()
+            
+            with col_next:
+                if st.button("Next →", type="primary", use_container_width=True, disabled='profile' not in st.session_state['registration_data']):
+                    st.session_state['registration_step'] = 3
+                    st.rerun()
+        
+        # Step 3: Preferences
+        elif st.session_state['registration_step'] == 3:
+            st.markdown("### Step 3: Notification Preferences")
+            
+            default_email = st.session_state['registration_data'].get('email', '')
+            target_email = st.text_input(
+                "Email for Daily Job Alerts", 
+                value=default_email,
+                key="reg_target_email",
+                help="Where should we send your daily job matches?"
+            )
+            
+            col_back, col_finish = st.columns([1, 1])
+            with col_back:
+                if st.button("← Back", use_container_width=True):
+                    st.session_state['registration_step'] = 2
+                    st.rerun()
+            
+            with col_finish:
+                if st.button("🚀 Create Account", type="primary", use_container_width=True):
+                    # Create user
+                    user_id = database.create_user(
+                        st.session_state['registration_data']['email'],
+                        st.session_state['registration_data']['password'],
+                        target_email
+                    )
+                    
+                    if user_id:
+                        # Save profile
+                        database.save_profile(
+                            user_id,
+                            st.session_state['registration_data']['cv_text'],
+                            st.session_state['registration_data']['profile'],
+                            st.session_state['registration_data']['profile'].get('search_keywords', [])
+                        )
+                        
+                        # Auto-login
+                        user = database.get_user_by_email(st.session_state['registration_data']['email'])
+                        st.session_state['user'] = user
+                        
+                        # Load profile into session
+                        st.session_state['cv_text'] = st.session_state['registration_data']['cv_text']
+                        st.session_state['candidate_profile'] = st.session_state['registration_data']['profile']
+                        
+                        # Clear registration state
+                        st.session_state['registration_step'] = 0
+                        st.session_state['registration_data'] = {}
+                        
+                        st.success("🎉 Account created! Welcome to JobHunter AI!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to create account. Please try again.")
     
     st.stop() # Stop execution if not logged in
 
