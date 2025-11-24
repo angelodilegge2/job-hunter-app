@@ -9,11 +9,15 @@ def main():
     openai_key = os.getenv("OPENAI_API_KEY")
     email_user = os.getenv("EMAIL_USER")
     email_pass = os.getenv("EMAIL_PASS")
-    target_email = os.getenv("TARGET_EMAIL")
 
-    if not all([openai_key, email_user, email_pass, target_email]):
-        print("❌ Missing environment variables! Ensure OPENAI_API_KEY, EMAIL_USER, EMAIL_PASS, and TARGET_EMAIL are set.")
+    if not all([openai_key, email_user, email_pass]):
+        print("❌ Missing environment variables! Ensure OPENAI_API_KEY, EMAIL_USER, and EMAIL_PASS are set.")
         sys.exit(1)
+    
+    # Note: For multi-user support, this script should be modified to:
+    # 1. Query all users with subscription_enabled = 1
+    # 2. Process each user's profile and send individual emails
+    # For now, it processes a single CV file as before
 
     # 2. Load CV
     cv_path = "cv.pdf"

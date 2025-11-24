@@ -259,8 +259,8 @@ with st.sidebar:
     else:
         st.info("No profile data. Upload a CV in Settings.")
 
-# Main Area - 3 Tabs
-tab1, tab2, tab3 = st.tabs(["🔍 Live Search", "💾 My Saved Jobs", "⚙️ Settings"])
+# Main Area - 4 Tabs
+tab1, tab2, tab3, tab4 = st.tabs(["🔍 Live Search", "💾 My Saved Jobs", "⚙️ Settings", "🔐 Admin"])
 
 # Tab 1: Live Search
 with tab1:
@@ -424,4 +424,83 @@ with tab3:
             st.success("✅ CV updated! Your profile has been refreshed.")
             st.info("💡 Your search keywords and skills have been updated based on the new CV.")
             st.rerun()
+
+# Tab 4: Admin
+with tab4:
+    st.header("🔐 Admin Dashboard")
+    
+    # Admin authentication
+    if 'admin_authenticated' not in st.session_state:
+        st.session_state['admin_authenticated'] = False
+    
+    if not st.session_state['admin_authenticated']:
+        st.subheader("Authentication Required")
+        admin_password = st.text_input("Admin Password", type="password", key="admin_pwd")
+        
+        if st.button("Login as Admin"):
+            try:
+                correct_password = st.secrets.get('ADMIN_PASSWORD')
+                if not correct_password:
+                    correct_password = os.getenv('ADMIN_PASSWORD')
+                
+                if admin_password and admin_password == correct_password:
+                    st.session_state['admin_authenticated'] = True
+                    st.success("✅ Admin access granted!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid password")
+            except:
+                st.error("⚠️ ADMIN_PASSWORD not configured in secrets")
+    else:
+        # Admin is authenticated
+        col_stats, col_logout = st.columns([4, 1])
+        with col_logout:
+            if st.button("Logout Admin"):
+                st.session_state['admin_authenticated'] = False
+                st.rerun()
+        
+        # Display statistics
+        stats = database.get_user_stats()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Users", stats['total_users'])
+        with col2:
+            st.metric("Active Subscriptions", stats['active_subscriptions'])
+        with col3:
+            st.metric("Users with Profiles", stats['users_with_profiles'])
+        
+        st.divider()
+        
+        # User management table
+        st.subheader("User Management")
+        
+        users = database.get_all_users()
+        
+        if users:
+            for user in users:
+                with st.expander(f"👤 {user['email']} (ID: {user['id']})"):
+                    col_info, col_actions = st.columns([3, 1])
+                    
+                    with col_info:
+                        st.write(f"**Target Email:** {user.get('target_email', 'Not set')}")
+                        st.write(f"**Created:** {user['created_at']}")
+                        st.write(f"**Profile Status:** {'✅ Has CV' if user['has_profile'] else '❌ No CV'}")
+                        if user['profile_updated']:
+                            st.write(f"**Profile Updated:** {user['profile_updated']}")
+                    
+                    with col_actions:
+                        current_status = bool(user.get('subscription_enabled', 1))
+                        new_status = st.toggle(
+                            "Email Subscription",
+                            value=current_status,
+                            key=f"sub_{user['id']}"
+                        )
+                        
+                        if new_status != current_status:
+                            database.toggle_subscription(user['id'], new_status)
+                            st.success("✅ Updated!")
+                            st.rerun()
+        else:
+            st.info("No users registered yet.")
 
