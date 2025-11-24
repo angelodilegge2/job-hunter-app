@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 import os
 import logic
 import json
@@ -127,10 +128,22 @@ with tab1:
         if not candidate_profile:
             st.warning("Please upload a CV and analyze it first.")
         else:
-            with st.spinner(f"Searching for jobs using keywords: {candidate_profile.get('search_keywords')}..."):
-                # Fetch Jobs
-                jobs = logic.fetch_all_jobs(candidate_profile)
-                st.info(f"Found {len(jobs)} potential jobs. Analyzing matches...")
+            with st.status("🔍 Scanning Job Boards...", expanded=True) as status:
+                start_time = time.time()
+                
+                # Define callback for status updates
+                def update_status(msg):
+                    status.write(msg)
+                
+                # Fetch Jobs with callback
+                jobs = logic.fetch_all_jobs(candidate_profile, status_callback=update_status)
+                
+                end_time = time.time()
+                elapsed = end_time - start_time
+                
+                status.update(label=f"✅ Search Complete! Found {len(jobs)} jobs in {elapsed:.2f} seconds.", state="complete", expanded=False)
+                
+                st.info(f"⏱️ Search took {elapsed:.2f} seconds. Analyzing matches...")
                 
                 # Match Jobs
                 results = []
@@ -177,8 +190,13 @@ with tab1:
                     st.caption(f"Source: {job['Source']}")
                     with st.expander("Details"):
                         st.write(job['Summary'])
-                        st.markdown("**Strengths:** " + ", ".join(job['Strengths']))
-                        st.markdown("**Gaps:** " + ", ".join(job['Gaps']))
+                        st.write(job['Summary'])
+                        st.markdown("**Strengths:**")
+                        for s in job['Strengths']:
+                            st.markdown(f"- ✅ {s}")
+                        st.markdown("**Gaps:**")
+                        for g in job['Gaps']:
+                            st.markdown(f"- ⚠️ {g}")
                 with col2:
                     if st.button("💾 Save", key=f"save_{job['URL']}"):
                         saved = database.save_job(job['Job Title'], job['Organization'], job['Score'], job['URL'])

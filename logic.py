@@ -203,13 +203,28 @@ def fetch_remoteok(profile):
         return jobs
     except: return []
 
-def fetch_all_jobs(profile):
+def fetch_all_jobs(profile, status_callback=None):
     all_jobs = []
-    all_jobs.extend(fetch_reliefweb(profile))
-    all_jobs.extend(fetch_smartrecruiters(profile))
-    all_jobs.extend(fetch_greenhouse(profile))
-    all_jobs.extend(fetch_lever(profile))
-    all_jobs.extend(fetch_remoteok(profile))
+    
+    sources = [
+        ("ReliefWeb", fetch_reliefweb),
+        ("SmartRecruiters", fetch_smartrecruiters),
+        ("Greenhouse", fetch_greenhouse),
+        ("Lever", fetch_lever),
+        ("Remote OK", fetch_remoteok)
+    ]
+    
+    for name, fetcher in sources:
+        if status_callback:
+            status_callback(f"Searching {name}...")
+        
+        jobs = fetcher(profile)
+        count = len(jobs)
+        all_jobs.extend(jobs)
+        
+        if status_callback:
+            status_callback(f"✅ Found {count} jobs from {name}")
+            
     return all_jobs
 
 def match_job_to_cv(job_text, candidate_profile):
